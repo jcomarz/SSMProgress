@@ -127,6 +127,9 @@ h1 small { display:block; font-family: var(--body); font-weight:400;
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
   color:#fff; }
 .chip[aria-pressed="true"] b { color: rgba(255,255,255,.8); }
+.chip[data-zero] { opacity:.45; }
+.chip[data-zero][aria-pressed="true"] { opacity:1; }
+.filters { padding-top: 12px; }
 
 /* ---- artist list ---- */
 .list { display:flex; flex-direction:column; gap:7px; padding-bottom:28px; }
@@ -180,7 +183,8 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
   line-height:1.3; }
 .meta { font-size:.7rem; color: var(--fg-faint); margin-top:2px; }
 .meta .miss { color: var(--gap); font-weight:600; }
-.pills { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+.pills { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px;
+  align-items:flex-start; align-content:flex-start; }
 .pill { font-size:.68rem; font-weight:600; border-radius:6px; padding:2px 7px;
   display:inline-flex; align-items:baseline; gap:4px; border:1px solid transparent; }
 .pill .v { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -188,7 +192,7 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
 .pill.s { background: var(--silver-bg); color: var(--silver); }
 .pill.g { background: var(--gold-bg);   color: var(--gold); }
 .pill.sp { background: var(--accent-sl); color: var(--accent); }
-.pill.empty { background: transparent; color: var(--gap);
+.pill.hole { background: transparent; color: var(--gap);
   border:1px dashed var(--gap); }
 
 .note { background: var(--surface); border:1px solid var(--line);
@@ -242,9 +246,10 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
 <main class="wrap">
   <div id="setup" hidden></div>
 
+  <div class="filters" id="filters"></div>
+
   <div id="overview">
     <div class="summary" id="summary"></div>
-    <div class="filters" id="filters"></div>
     <div class="list" id="list">
       <div class="skel"></div><div class="skel"></div><div class="skel"></div>
       <div class="skel"></div><div class="skel"></div>
@@ -354,6 +359,23 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
     var s = String(v == null ? "" : v).trim();
     return s === "" || s === "-" || s === "—";
   }
+  /* the feed hands dates back in whatever shape the column was serialised in:
+     "05-29-2026" as the sheet shows it, an ISO stamp with a midnight time, or
+     gviz's own Date(y,m,d). Show them all the way the sheet does. */
+  function tidyDate(v) {
+    var t = String(v == null ? "" : v).trim();
+    if (!t) return "";
+    t = t.replace(/[ T]00:00:00(\.0+)?Z?$/, "");
+    var g = t.match(/^Date\((\d+),(\d+),(\d+)/);
+    if (g) {
+      return pad(Number(g[2]) + 1) + "-" + pad(g[3]) + "-" + g[1];
+    }
+    var iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) return iso[2] + "-" + iso[3] + "-" + iso[1];
+    return t;
+  }
+  function pad(n) { return (Number(n) < 10 ? "0" : "") + Number(n); }
+
   function numOf(v) {
     var s = String(v == null ? "" : v).replace(/[,\s]/g, "");
     if (s === "" || s === "-" || s === "—") return null;
@@ -394,7 +416,7 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
         hard: col.hard === undefined ? null : numOf(v[col.hard]),
         sp: col.sp === undefined ? null : numOf(v[col.sp]),
         miss: col.miss === undefined ? null : numOf(v[col.miss]),
-        date: col.date === undefined ? "" : String(v[col.date] || "").trim(),
+        date: col.date === undefined ? "" : tidyDate(v[col.date]),
         mmdd: col.mmdd === undefined ? "" : String(v[col.mmdd] || "").trim(),
         order: col.order === undefined ? null : numOf(v[col.order])
       };
@@ -433,8 +455,11 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
 
   /* ---------- load ---------- */
   var KEYS = ["notes", "sp", "date", "len", "order"];
-  var LABEL = { notes: "Note counts", sp: "SP count", date: "Release date",
+  var LABEL = { notes: "Note counts", sp: "SP run", date: "Release date",
                 len: "Length", order: "Order" };
+  /* spelled out for the chips, so "SP" keeps its capitals */
+  var PLURAL = { notes: "note counts", sp: "SP runs", date: "release dates",
+                 len: "lengths", order: "order numbers" };
 
   function show(csv, when, fromCache) {
     DATA = build(csv); ERR = null;
@@ -562,6 +587,27 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
     return true;
   }
 
+  /* the chips count whatever you are looking at: the whole book on the
+     artist list, just this artist once you are inside one */
+  function drawFilters(scope) {
+    var totals = { notes: 0, sp: 0, date: 0, len: 0, order: 0 };
+    scope.forEach(function (s) {
+      KEYS.forEach(function (k) { if (s.gaps[k]) totals[k]++; });
+    });
+    var f = document.getElementById("filters");
+    f.innerHTML = '<button class="chip" data-k="" aria-pressed="' + (!filter) +
+      '">Everything<b>' + scope.length + "</b></button>" +
+      KEYS.map(function (k) {
+        return '<button class="chip" data-k="' + k + '"' +
+          (totals[k] ? "" : " data-zero=\"1\"") + ' aria-pressed="' +
+          (filter === k) + '">No ' + PLURAL[k] + "<b>" + totals[k] + "</b></button>";
+      }).join("");
+    Array.prototype.forEach.call(f.querySelectorAll(".chip"), function (b) {
+      b.onclick = function () { filter = b.getAttribute("data-k") || null; render(); };
+    });
+    return totals;
+  }
+
   function render() {
     if (!DATA) return;
     if (current) { renderDetail(); return; }
@@ -569,9 +615,9 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
     document.getElementById("overview").hidden = false;
 
     var all = DATA.songs;
-    var totals = { notes: 0, sp: 0, date: 0, len: 0, order: 0 }, clear = 0, spDone = 0;
+    var totals = drawFilters(all);
+    var clear = 0, spDone = 0;
     all.forEach(function (s) {
-      KEYS.forEach(function (k) { if (s.gaps[k]) totals[k]++; });
       if (!s.dataGap) clear++;
       if (!s.gaps.sp) spDone++;
     });
@@ -581,18 +627,6 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
       tile(clear, "data done", "done") +
       tile(totals.notes, "note gaps", "todo") +
       tile(spDone, "SP logged", "sp");
-
-    var f = document.getElementById("filters");
-    f.innerHTML = '<button class="chip" data-k="" aria-pressed="' + (!filter) +
-      '">Everything</button>' +
-      KEYS.map(function (k) {
-        return '<button class="chip" data-k="' + k + '" aria-pressed="' +
-          (filter === k) + '">Missing ' + LABEL[k].toLowerCase() +
-          "<b>" + totals[k] + "</b></button>";
-      }).join("");
-    Array.prototype.forEach.call(f.querySelectorAll(".chip"), function (b) {
-      b.onclick = function () { filter = b.getAttribute("data-k") || null; render(); };
-    });
 
     var list = document.getElementById("list"), html = "", shown = 0;
     DATA.artists.forEach(function (a) {
@@ -643,21 +677,23 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
     var d = document.getElementById("detail");
     d.hidden = false;
 
-    var songs = (DATA.byArtist[current] || []).filter(matches);
     var all = DATA.byArtist[current] || [];
+    drawFilters(all);
+    var songs = all.filter(matches);
     var done = all.filter(function (s) { return !s.dataGap; }).length;
 
     document.getElementById("dname").textContent = current;
     document.getElementById("dsub").textContent =
       all.length + " songs · " + done + " with full data · " +
       all.filter(function (s) { return !s.gaps.sp; }).length + " with an SP run" +
-      (filter ? " · showing only those missing " + LABEL[filter].toLowerCase() : "") +
+      (filter ? " · showing the " + songs.length + " with no " + PLURAL[filter] : "") +
       (all.some(function (s) { return s.order !== null; })
         ? "" : " · no order numbers set yet");
 
     document.getElementById("songs").innerHTML = songs.length
       ? songs.map(songCard).join("")
-      : '<div class="empty">Nothing here is missing that.</div>';
+      : '<div class="empty">Every ' + esc(current) + " song has " +
+        PLURAL[filter || "notes"] + ".</div>";
   }
 
   function songCard(s) {
@@ -670,7 +706,7 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
     var pills =
       dpill("b", "E", s.easy) + dpill("s", "N", s.normal) + dpill("g", "H", s.hard) +
       (s.sp === null
-        ? '<span class="pill empty">SP —</span>'
+        ? '<span class="pill hole">SP —</span>'
         : '<span class="pill sp">SP <span class="v">' + s.sp + "</span>" +
           (s.miss === null ? "" : ' · <span class="v">' + s.miss + "</span> miss") +
           "</span>");
@@ -685,7 +721,7 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
 
   function dpill(cls, letter, n) {
     return n === null
-      ? '<span class="pill empty">' + letter + " —</span>"
+      ? '<span class="pill hole">' + letter + " —</span>"
       : '<span class="pill ' + cls + '">' + letter +
         ' <span class="v">' + n + "</span></span>";
   }
