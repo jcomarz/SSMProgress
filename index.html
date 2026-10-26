@@ -279,6 +279,42 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
 
   var LS_URL = "ssmgap.url", LS_DATA = "ssmgap.data", LS_WHEN = "ssmgap.when";
 
+  /* Takes whatever the user pastes — the sheet's ordinary address-bar URL, a
+     published link, a bare gid, or a finished CSV link — and works out the
+     feeds to try. Google only hands out a copyable link for "Web page"
+     format, so nobody should have to construct a CSV URL by hand. */
+  function fromInput(v) {
+    v = String(v == null ? "" : v).trim();
+    if (!v) return [];
+    if (/output=csv|tqx=out:csv|format=csv/.test(v)) return [v];
+
+    var out = [];
+    var gid = (v.match(/[?&#]gid=(\d+)/) || [])[1];
+    var pub = (v.match(/\/d\/e\/([^\/?#]+)/) || [])[1];
+    var doc = pub ? null : (v.match(/\/d\/([A-Za-z0-9_-]{20,})/) || [])[1];
+    if (/^\d+$/.test(v)) gid = v;
+    if (!pub && !doc && /^[A-Za-z0-9_-]{30,}$/.test(v)) doc = v;
+
+    if (pub) {
+      if (gid) out.push(P(pub) + "/pub?gid=" + gid + "&single=true&output=csv");
+      out.push(P(pub) + "/pub?output=csv");
+    }
+    if (doc) {
+      out.push(S(doc) + "/gviz/tq?tqx=out:csv&sheet=Export");
+      if (gid) {
+        out.push(S(doc) + "/gviz/tq?tqx=out:csv&gid=" + gid);
+        out.push(S(doc) + "/export?format=csv&gid=" + gid);
+      }
+    }
+    if (!pub && !doc && gid) {
+      out.push(P(PUB) + "/pub?gid=" + gid + "&single=true&output=csv");
+      out.push(S(DOC) + "/gviz/tq?tqx=out:csv&gid=" + gid);
+    }
+    return out;
+  }
+  function S(id) { return "https://docs.google.com/spreadsheets/d/" + id; }
+  function P(k)  { return "https://docs.google.com/spreadsheets/d/e/" + k; }
+
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
@@ -413,8 +449,7 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
   }
 
   function load() {
-    var saved = lsGet(LS_URL);
-    var urls = saved ? [saved].concat(SOURCES) : SOURCES.slice();
+    var urls = fromInput(lsGet(LS_URL)).concat(SOURCES);
     var i = 0, lastErr = "";
 
     (function next() {
@@ -455,15 +490,16 @@ h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
       '<div class="note">' +
         "<h3>" + (isError ? "Can’t read the sheet" : "Data source") + "</h3>" +
         (isError
-          ? "<p>Tried the shared link and the published copy; the last one said <code>" +
-            esc(ERR || "no reason given") + "</code>.</p>" +
-            "<p>Two things usually fix it. In the sheet, <b>Share → Anyone with the " +
-            "link → Viewer</b>. Or <b>File → Share → Publish to web</b>, pick the " +
-            "<b>Export</b> tab and <b>Comma-separated values</b>, then paste that " +
-            "link below.</p>"
-          : "<p>The page reads the <b>Export</b> tab, which stacks every artist tab. " +
-            "Leave this empty to use the shared link.</p>") +
-        '<p><input type="text" id="url" placeholder="https://docs.google.com/…output=csv" value="' +
+          ? "<p>The last attempt said <code>" + esc(ERR || "no reason given") +
+            "</code>.</p>" +
+            "<p>Usually this is sharing. In the sheet: <b>Share → General access " +
+            "→ Anyone with the link → Viewer</b>. That alone is normally enough.</p>"
+          : "<p>The page reads the <b>Export</b> tab, which stacks every artist tab.</p>") +
+        "<p>If it still won’t read, open the sheet, <b>click the Export tab</b>, " +
+        "and paste the address bar URL here as it is. No need to publish " +
+        "anything or build a CSV link — the number after <code>gid=</code> is " +
+        "all this needs, and it will pick it out.</p>" +
+        '<p><input type="text" id="url" placeholder="https://docs.google.com/spreadsheets/d/…#gid=123456" value="' +
           esc(saved) + '"></p>' +
         '<div class="row"><button class="btn" id="save">Use this link</button>' +
         '<button class="btn ghost" id="clear">Reset</button>' +
