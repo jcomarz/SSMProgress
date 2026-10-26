@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+/* base the artifact host used to provide */
+:root { color-scheme: light;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px); }
+html, body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+</style>
+<title>SSM Gap Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* Layout: single mobile column — sticky search header, summary strip, gap
+   filters, then either the artist list or one artist's songs in play order.
+   Difficulty uses the game's own bronze / silver / gold for Easy / Normal /
+   Hard, so a missing chart reads as a hole in a familiar row. */
+:root {
+  --bg:        #f4f2f6;
+  --surface:   #ffffff;
+  --surface-2: #ebe7f0;
+  --line:      #d9d3e2;
+  --fg:        #1d1a26;
+  --fg-soft:   #615a72;
+  --fg-faint:  #8d86a0;
+  --accent:    #c2186b;
+  --accent-sl: #fbe8f1;
+  --ok:        #1f7a52;
+  --ok-soft:   #e3f3ea;
+  --gap:       #b4451a;
+  --gap-soft:  #fdeae0;
+  --bronze:    #9a5a2c;
+  --silver:    #5d6672;
+  --gold:      #9a7a14;
+  --bronze-bg: #f6ecdf;
+  --silver-bg: #e9ecf1;
+  --gold-bg:   #f7f0d8;
+  --shadow:    0 1px 2px rgba(29,26,38,.07), 0 6px 18px rgba(29,26,38,.06);
+  --display:   "Chakra Petch", "Trebuchet MS", sans-serif;
+  /* bar fills: --ok for sheet data, --accent for your own SP progress */
+  --body:      "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --mono:      "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#15131c; --surface:#201d2a; --surface-2:#2a2636; --line:#39334a;
+    --fg:#f0edf5; --fg-soft:#b3abc4; --fg-faint:#857d99;
+    --accent:#ff6fa8; --accent-sl:#3a1a2a;
+    --ok:#5fd39b; --ok-soft:#163528; --gap:#ff9566; --gap-soft:#3b2318;
+    --bronze:#d79a5f; --silver:#a9b3c2; --gold:#dcc059;
+    --bronze-bg:#352619; --silver-bg:#262b34; --gold-bg:#342d14;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#15131c; --surface:#201d2a; --surface-2:#2a2636; --line:#39334a;
+  --fg:#f0edf5; --fg-soft:#b3abc4; --fg-faint:#857d99;
+  --accent:#ff6fa8; --accent-sl:#3a1a2a;
+  --ok:#5fd39b; --ok-soft:#163528; --gap:#ff9566; --gap-soft:#3b2318;
+  --bronze:#d79a5f; --silver:#a9b3c2; --gold:#dcc059;
+  --bronze-bg:#352619; --silver-bg:#262b34; --gold-bg:#342d14;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+
+body { background: var(--bg); color: var(--fg); font-family: var(--body);
+       line-height: 1.45; -webkit-text-size-adjust: 100%; }
+body::before { content:""; position:fixed; inset:0 0 auto;
+  height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--surface); }
+* { box-sizing: border-box; }
+button, input { font: inherit; color: inherit; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px));
+        padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* ---- header ---- */
+header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  background: var(--surface); border-bottom: 1px solid var(--line); }
+.hrow { display:flex; align-items:center; gap:10px; padding-block: 10px 8px; }
+h1 { font-family: var(--display); font-size: 1.12rem; font-weight: 700;
+     letter-spacing:.01em; margin:0; flex:1; min-width:0; }
+h1 small { display:block; font-family: var(--body); font-weight:400;
+  font-size:.68rem; color: var(--fg-faint); letter-spacing:.02em; }
+.iconbtn { background: var(--surface-2); border:1px solid var(--line);
+  border-radius: 9px; width:34px; height:34px; display:grid; place-items:center;
+  cursor:pointer; flex:none; color: var(--fg-soft); }
+.iconbtn:hover { border-color: var(--accent); color: var(--accent); }
+.iconbtn svg { width:17px; height:17px; }
+.search { position:relative; padding-bottom: 10px; }
+.search input { width:100%; padding: 9px 12px 9px 34px; border-radius: 10px;
+  border:1px solid var(--line); background: var(--bg); font-size:.92rem; }
+.search input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+.search svg { position:absolute; left:11px; top:9px; width:16px; height:16px;
+  color: var(--fg-faint); pointer-events:none; }
+
+/* ---- summary ---- */
+.summary { display:grid; grid-template-columns: repeat(4,1fr); gap:7px;
+  padding-block: 12px 10px; }
+.tile { background: var(--surface); border:1px solid var(--line);
+  border-radius: 11px; padding:9px 7px; text-align:center; min-width:0; }
+.tile b { display:block; font-family: var(--mono); font-weight:600;
+  font-size: 1.12rem; font-variant-numeric: tabular-nums; }
+.tile span { display:block; font-size:.6rem; text-transform:uppercase;
+  letter-spacing:.07em; color: var(--fg-faint); margin-top:1px; }
+.tile.done b { color: var(--ok); }
+.tile.todo b { color: var(--gap); }
+.tile.sp b { color: var(--accent); }
+
+/* ---- filters ---- */
+.filters { display:flex; gap:6px; overflow-x:auto; padding-bottom:12px;
+  scrollbar-width:none; }
+.filters::-webkit-scrollbar { display:none; }
+.chip { flex:none; border:1px solid var(--line); background: var(--surface);
+  color: var(--fg-soft); border-radius:999px; padding:5px 11px; font-size:.76rem;
+  font-weight:500; cursor:pointer; white-space:nowrap; }
+.chip b { font-family: var(--mono); font-weight:600; margin-left:4px;
+  color: var(--fg-faint); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
+  color:#fff; }
+.chip[aria-pressed="true"] b { color: rgba(255,255,255,.8); }
+
+/* ---- artist list ---- */
+.list { display:flex; flex-direction:column; gap:7px; padding-bottom:28px; }
+.artist { display:block; width:100%; text-align:left; background: var(--surface);
+  border:1px solid var(--line); border-radius:12px; padding:11px 12px;
+  cursor:pointer; box-shadow: var(--shadow); }
+.artist:hover { border-color: var(--accent); }
+.artist .top { display:flex; align-items:baseline; gap:8px; }
+.artist .nm { font-weight:600; font-size:.93rem; flex:1; min-width:0;
+  overflow-wrap:anywhere; }
+.artist .ct { font-family: var(--mono); font-size:.72rem; color: var(--fg-faint);
+  font-variant-numeric: tabular-nums; flex:none; }
+.meter { display:flex; align-items:center; gap:7px; margin-top:6px; }
+.ml { font-size:.63rem; text-transform:uppercase; letter-spacing:.06em;
+  color: var(--fg-faint); width:30px; flex:none; }
+.mv { font-family: var(--mono); font-size:.68rem; color: var(--fg-faint);
+  font-variant-numeric: tabular-nums; flex:none; }
+.bar { height:5px; border-radius:999px; background: var(--surface-2);
+  flex:1; min-width:0; overflow:hidden; }
+.bar i { display:block; height:100%; border-radius:999px; background: var(--ok); }
+.bar i.sp { background: var(--accent); }
+.tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+.tag { font-size:.66rem; font-weight:600; letter-spacing:.03em; border-radius:5px;
+  padding:2px 6px; background: var(--gap-soft); color: var(--gap); }
+.tag.ok { background: var(--ok-soft); color: var(--ok); }
+.tag .n { font-family: var(--mono); }
+
+/* ---- songs ---- */
+.backbar { display:flex; align-items:center; gap:9px; padding-block: 12px 4px; }
+.back { background:none; border:none; color: var(--accent); cursor:pointer;
+  font-weight:600; font-size:.85rem; padding:4px 0; display:flex;
+  align-items:center; gap:4px; }
+.back svg { width:15px; height:15px; }
+h2 { font-family: var(--display); font-size:1.3rem; margin:0; line-height:1.15;
+  text-wrap:balance; overflow-wrap:anywhere; }
+.sub { color: var(--fg-faint); font-size:.76rem; margin-top:3px;
+  padding-bottom:12px; }
+.song { background: var(--surface); border:1px solid var(--line);
+  border-radius:12px; padding:10px 11px; display:flex; gap:10px;
+  box-shadow: var(--shadow); }
+.song.clear { border-left:3px solid var(--ok); }
+.song.holes { border-left:3px solid var(--gap); }
+.ord { flex:none; width:28px; height:28px; border-radius:8px;
+  background: var(--surface-2); color: var(--fg-soft); display:grid;
+  place-items:center; font-family: var(--mono); font-weight:600; font-size:.76rem;
+  font-variant-numeric: tabular-nums; }
+.ord.none { color: var(--gap); background: var(--gap-soft);
+  border:1px dashed var(--gap); }
+.body { flex:1; min-width:0; }
+.ttl { font-weight:600; font-size:.89rem; overflow-wrap:anywhere;
+  line-height:1.3; }
+.meta { font-size:.7rem; color: var(--fg-faint); margin-top:2px; }
+.meta .miss { color: var(--gap); font-weight:600; }
+.pills { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+.pill { font-size:.68rem; font-weight:600; border-radius:6px; padding:2px 7px;
+  display:inline-flex; align-items:baseline; gap:4px; border:1px solid transparent; }
+.pill .v { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.pill.b { background: var(--bronze-bg); color: var(--bronze); }
+.pill.s { background: var(--silver-bg); color: var(--silver); }
+.pill.g { background: var(--gold-bg);   color: var(--gold); }
+.pill.sp { background: var(--accent-sl); color: var(--accent); }
+.pill.empty { background: transparent; color: var(--gap);
+  border:1px dashed var(--gap); }
+
+.note { background: var(--surface); border:1px solid var(--line);
+  border-radius:12px; padding:16px; margin-bottom:12px; }
+.note h3 { font-family: var(--display); margin:0 0 6px; font-size:1rem; }
+.note p { margin:0 0 9px; font-size:.84rem; color: var(--fg-soft); }
+.note p:last-child { margin-bottom:0; }
+.note code { font-family: var(--mono); font-size:.76rem; background: var(--surface-2);
+  padding:1px 5px; border-radius:4px; overflow-wrap:anywhere; }
+.note input[type=text], .note textarea { width:100%; padding:8px 10px;
+  border-radius:9px; border:1px solid var(--line); background: var(--bg);
+  font-family: var(--mono); font-size:.76rem; }
+.note textarea { min-height:90px; resize:vertical; }
+.btn { background: var(--accent); color:#fff; border:none; border-radius:9px;
+  padding:8px 14px; font-weight:600; font-size:.84rem; cursor:pointer; }
+.btn.ghost { background: var(--surface-2); color: var(--fg); }
+.row { display:flex; gap:7px; flex-wrap:wrap; margin-top:9px; }
+.empty { text-align:center; color: var(--fg-faint); padding:34px 10px;
+  font-size:.86rem; }
+.skel { background: var(--surface); border:1px solid var(--line);
+  border-radius:12px; height:62px; margin-bottom:7px; opacity:.55; }
+@media (prefers-reduced-motion: no-preference) {
+  .skel { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:.35} 50%{opacity:.7} }
+}
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="hrow">
+      <h1>SSM Gap Check<small id="stamp">loading from your sheet…</small></h1>
+      <button class="iconbtn" id="refresh" title="Reload from the sheet" aria-label="Reload from the sheet">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+      </button>
+      <button class="iconbtn" id="gear" title="Data source" aria-label="Data source">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+      </button>
+    </div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Find an artist or song" autocomplete="off">
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="setup" hidden></div>
+
+  <div id="overview">
+    <div class="summary" id="summary"></div>
+    <div class="filters" id="filters"></div>
+    <div class="list" id="list">
+      <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+      <div class="skel"></div><div class="skel"></div>
+    </div>
+  </div>
+
+  <div id="detail" hidden>
+    <div class="backbar">
+      <button class="back" id="back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg>All artists
+      </button>
+    </div>
+    <h2 id="dname"></h2>
+    <div class="sub" id="dsub"></div>
+    <div class="list" id="songs"></div>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var DOC = "1kImSk6qDvsD_hCPe7Kwkpfq_fboHYWwKsw9gjuaDlaM";
+  var PUB = "2PACX-1vSqIuXRh4jn_zFyt-2j0V6OznkcHphBQKlyupdXgq1jQjlAHENdWFvC8mVojfuj9iV_sWDUNe3Cxm5x";
+
+  var SOURCES = [
+    "https://docs.google.com/spreadsheets/d/" + DOC + "/gviz/tq?tqx=out:csv&sheet=Export",
+    "https://docs.google.com/spreadsheets/d/e/" + PUB + "/pub?gid=0&single=true&output=csv",
+    "https://docs.google.com/spreadsheets/d/e/" + PUB + "/pub?output=csv"
+  ];
+
+  var LS_URL = "ssmgap.url", LS_DATA = "ssmgap.data", LS_WHEN = "ssmgap.when";
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  /* ---------- CSV ---------- */
+  function parseCSV(text) {
+    var rows = [], row = [], f = "", i = 0, q = false, ch;
+    while (i < text.length) {
+      ch = text.charAt(i);
+      if (q) {
+        if (ch === '"') {
+          if (text.charAt(i + 1) === '"') { f += '"'; i += 2; continue; }
+          q = false; i++; continue;
+        }
+        f += ch; i++; continue;
+      }
+      if (ch === '"') { q = true; i++; continue; }
+      if (ch === ",") { row.push(f); f = ""; i++; continue; }
+      if (ch === "\t" && text.indexOf(",") === -1) { row.push(f); f = ""; i++; continue; }
+      if (ch === "\r") { i++; continue; }
+      if (ch === "\n") { row.push(f); rows.push(row); row = []; f = ""; i++; continue; }
+      f += ch; i++;
+    }
+    if (f.length || row.length) { row.push(f); rows.push(row); }
+    return rows;
+  }
+
+  var HEAD = {
+    artist: "artist", song: "song", length: "len", easy: "easy", normal: "normal",
+    hardcount: "hard", date: "date", mmdd: "mmdd", order: "order",
+    myspcount: "sp", missednotes: "miss",
+    easymodenotecount: "easy", normalmodenotecount: "normal",
+    hardmodenotecount: "hard", releasedatemmddyyyy: "date", releasedatemmdd: "mmdd"
+  };
+  function hk(s) { return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, ""); }
+
+  function blank(v) {
+    var s = String(v == null ? "" : v).trim();
+    return s === "" || s === "-" || s === "—";
+  }
+  function numOf(v) {
+    var s = String(v == null ? "" : v).replace(/[,\s]/g, "");
+    if (s === "" || s === "-" || s === "—") return null;
+    var n = Number(s);
+    return isFinite(n) ? n : null;
+  }
+
+  /* ---------- shape the rows ---------- */
+  var DATA = null, ERR = null;
+
+  function build(csv) {
+    var rows = parseCSV(csv).filter(function (r) {
+      return r.some(function (c) { return String(c).trim() !== ""; });
+    });
+    if (!rows.length) throw new Error("That sheet came back empty.");
+
+    var head = rows[0], col = {};
+    for (var i = 0; i < head.length; i++) {
+      var k = HEAD[hk(head[i])];
+      if (k && col[k] === undefined) col[k] = i;
+    }
+    if (col.artist === undefined || col.song === undefined) {
+      throw new Error("No Artist and Song columns here. This looks like a " +
+        "different tab — the feed needs to be the Export tab.");
+    }
+
+    var songs = [];
+    for (var r = 1; r < rows.length; r++) {
+      var v = rows[r];
+      var title = String(v[col.song] == null ? "" : v[col.song]).trim();
+      if (!title) continue;
+      var s = {
+        artist: String(v[col.artist] == null ? "" : v[col.artist]).trim() || "(no artist)",
+        song: title,
+        len: col.len === undefined ? "" : String(v[col.len] || "").trim(),
+        easy: col.easy === undefined ? null : numOf(v[col.easy]),
+        normal: col.normal === undefined ? null : numOf(v[col.normal]),
+        hard: col.hard === undefined ? null : numOf(v[col.hard]),
+        sp: col.sp === undefined ? null : numOf(v[col.sp]),
+        miss: col.miss === undefined ? null : numOf(v[col.miss]),
+        date: col.date === undefined ? "" : String(v[col.date] || "").trim(),
+        mmdd: col.mmdd === undefined ? "" : String(v[col.mmdd] || "").trim(),
+        order: col.order === undefined ? null : numOf(v[col.order])
+      };
+      s.gaps = {
+        notes: s.easy === null || s.normal === null || s.hard === null,
+        sp: s.sp === null,
+        date: blank(s.date),
+        len: blank(s.len),
+        order: s.order === null
+      };
+      /* two different kinds of "to do": holes in the sheet's data, and songs
+         you have not posted a Super Perfect run on yet. Mixing them would
+         bury the data gaps under a thousand unplayed charts. */
+      s.dataGap = s.gaps.notes || s.gaps.date || s.gaps.len || s.gaps.order;
+      s.any = s.dataGap || s.gaps.sp;
+      songs.push(s);
+    }
+    if (!songs.length) throw new Error("No song rows found in that feed.");
+
+    var byArtist = {}, order = [];
+    songs.forEach(function (s) {
+      if (!byArtist[s.artist]) { byArtist[s.artist] = []; order.push(s.artist); }
+      byArtist[s.artist].push(s);
+    });
+    order.sort(function (a, b) { return a.localeCompare(b, undefined, { sensitivity: "base" }); });
+    order.forEach(function (a) {
+      byArtist[a].sort(function (x, y) {
+        if (x.order === null && y.order === null) return x.song.localeCompare(y.song);
+        if (x.order === null) return 1;
+        if (y.order === null) return -1;
+        return x.order - y.order;
+      });
+    });
+    return { songs: songs, byArtist: byArtist, artists: order };
+  }
+
+  /* ---------- load ---------- */
+  var KEYS = ["notes", "sp", "date", "len", "order"];
+  var LABEL = { notes: "Note counts", sp: "SP count", date: "Release date",
+                len: "Length", order: "Order" };
+
+  function show(csv, when, fromCache) {
+    DATA = build(csv); ERR = null;
+    if (!fromCache) { lsSet(LS_DATA, csv); lsSet(LS_WHEN, String(when)); }
+    var d = new Date(Number(when));
+    document.getElementById("stamp").textContent =
+      DATA.songs.length + " songs · " + (fromCache ? "saved copy from " : "read ") +
+      d.toLocaleString(undefined, { month: "short", day: "numeric",
+        hour: "numeric", minute: "2-digit" });
+    document.getElementById("setup").hidden = true;
+    render();
+  }
+
+  function load() {
+    var saved = lsGet(LS_URL);
+    var urls = saved ? [saved].concat(SOURCES) : SOURCES.slice();
+    var i = 0, lastErr = "";
+
+    (function next() {
+      if (i >= urls.length) { failed(lastErr); return; }
+      var u = urls[i++];
+      fetch(u, { cache: "no-store" })
+        .then(function (res) {
+          if (!res.ok) throw new Error("the sheet answered " + res.status);
+          return res.text();
+        })
+        .then(function (txt) {
+          if (/^\s*</.test(txt)) throw new Error("got a web page instead of CSV");
+          show(txt, Date.now(), false);
+        })
+        .catch(function (e) { lastErr = e && e.message ? e.message : String(e); next(); });
+    })();
+  }
+
+  function failed(msg) {
+    var cached = lsGet(LS_DATA), when = lsGet(LS_WHEN);
+    if (cached) {
+      try {
+        show(cached, when || Date.now(), true);
+        document.getElementById("stamp").textContent += " · offline";
+        return;
+      } catch (e) {}
+    }
+    ERR = msg || "could not reach the sheet";
+    document.getElementById("list").innerHTML = "";
+    openSetup(true);
+  }
+
+  /* ---------- setup panel ---------- */
+  function openSetup(isError) {
+    var box = document.getElementById("setup");
+    var saved = lsGet(LS_URL) || "";
+    box.innerHTML =
+      '<div class="note">' +
+        "<h3>" + (isError ? "Can’t read the sheet" : "Data source") + "</h3>" +
+        (isError
+          ? "<p>Tried the shared link and the published copy; the last one said <code>" +
+            esc(ERR || "no reason given") + "</code>.</p>" +
+            "<p>Two things usually fix it. In the sheet, <b>Share → Anyone with the " +
+            "link → Viewer</b>. Or <b>File → Share → Publish to web</b>, pick the " +
+            "<b>Export</b> tab and <b>Comma-separated values</b>, then paste that " +
+            "link below.</p>"
+          : "<p>The page reads the <b>Export</b> tab, which stacks every artist tab. " +
+            "Leave this empty to use the shared link.</p>") +
+        '<p><input type="text" id="url" placeholder="https://docs.google.com/…output=csv" value="' +
+          esc(saved) + '"></p>' +
+        '<div class="row"><button class="btn" id="save">Use this link</button>' +
+        '<button class="btn ghost" id="clear">Reset</button>' +
+        (isError ? "" : '<button class="btn ghost" id="close">Close</button>') +
+        "</div>" +
+        "<p style=\"margin-top:14px\">Or paste the Export tab straight in — select " +
+        "it in the sheet, copy, and drop it here.</p>" +
+        '<textarea id="paste" placeholder="Artist	Song	Length	Easy	…"></textarea>' +
+        '<div class="row"><button class="btn ghost" id="usepaste">Use pasted rows</button></div>' +
+      "</div>";
+    box.hidden = false;
+    document.getElementById("overview").hidden = !!isError;
+
+    document.getElementById("save").onclick = function () {
+      var u = document.getElementById("url").value.trim();
+      if (u) lsSet(LS_URL, u);
+      location.reload();
+    };
+    document.getElementById("clear").onclick = function () {
+      try { localStorage.removeItem(LS_URL); } catch (e) {}
+      location.reload();
+    };
+    var c = document.getElementById("close");
+    if (c) c.onclick = function () { box.hidden = true; document.getElementById("overview").hidden = false; };
+    document.getElementById("usepaste").onclick = function () {
+      var t = document.getElementById("paste").value;
+      if (!t.trim()) return;
+      try {
+        show(t.indexOf("\t") > -1 ? t.replace(/\t/g, ",") : t, Date.now(), false);
+        document.getElementById("overview").hidden = false;
+      } catch (e) {
+        alertInline(e.message);
+      }
+    };
+  }
+
+  function alertInline(m) {
+    var p = document.createElement("p");
+    p.style.color = "var(--gap)"; p.style.fontWeight = "600";
+    p.textContent = m;
+    document.querySelector("#setup .note").appendChild(p);
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  /* ---------- state ---------- */
+  var filter = null, query = "", current = null;
+
+  function matches(s) {
+    if (filter && !s.gaps[filter]) return false;
+    if (query) {
+      var q = query.toLowerCase();
+      if (s.song.toLowerCase().indexOf(q) === -1 &&
+          s.artist.toLowerCase().indexOf(q) === -1) return false;
+    }
+    return true;
+  }
+
+  function render() {
+    if (!DATA) return;
+    if (current) { renderDetail(); return; }
+    document.getElementById("detail").hidden = true;
+    document.getElementById("overview").hidden = false;
+
+    var all = DATA.songs;
+    var totals = { notes: 0, sp: 0, date: 0, len: 0, order: 0 }, clear = 0, spDone = 0;
+    all.forEach(function (s) {
+      KEYS.forEach(function (k) { if (s.gaps[k]) totals[k]++; });
+      if (!s.dataGap) clear++;
+      if (!s.gaps.sp) spDone++;
+    });
+
+    document.getElementById("summary").innerHTML =
+      tile(all.length, "songs", "") +
+      tile(clear, "data done", "done") +
+      tile(totals.notes, "note gaps", "todo") +
+      tile(spDone, "SP logged", "sp");
+
+    var f = document.getElementById("filters");
+    f.innerHTML = '<button class="chip" data-k="" aria-pressed="' + (!filter) +
+      '">Everything</button>' +
+      KEYS.map(function (k) {
+        return '<button class="chip" data-k="' + k + '" aria-pressed="' +
+          (filter === k) + '">Missing ' + LABEL[k].toLowerCase() +
+          "<b>" + totals[k] + "</b></button>";
+      }).join("");
+    Array.prototype.forEach.call(f.querySelectorAll(".chip"), function (b) {
+      b.onclick = function () { filter = b.getAttribute("data-k") || null; render(); };
+    });
+
+    var list = document.getElementById("list"), html = "", shown = 0;
+    DATA.artists.forEach(function (a) {
+      var songs = DATA.byArtist[a].filter(matches);
+      if (!songs.length) return;
+      shown++;
+      var done = 0, sp = 0, t = { notes: 0, sp: 0, date: 0, len: 0, order: 0 };
+      DATA.byArtist[a].forEach(function (s) {
+        if (!s.dataGap) done++;
+        if (!s.gaps.sp) sp++;
+        KEYS.forEach(function (k) { if (s.gaps[k]) t[k]++; });
+      });
+      var n = DATA.byArtist[a].length;
+      var tags = KEYS.filter(function (k) { return k !== "sp" && t[k]; })
+        .map(function (k) {
+          return '<span class="tag">' + LABEL[k] + ' <span class="n">' + t[k] + "</span></span>";
+        }).join("");
+      if (!tags) tags = '<span class="tag ok">Data complete</span>';
+      html += '<button class="artist' + (done === n ? " clear" : "") +
+        '" data-a="' + esc(a) + '"><div class="top"><span class="nm">' + esc(a) +
+        "</span></div>" +
+        meter("Data", done, n, "ok") + meter("SP", sp, n, "sp") +
+        '<div class="tags">' + tags + "</div></button>";
+    });
+    list.innerHTML = html || '<div class="empty">Nothing matches that.</div>';
+    Array.prototype.forEach.call(list.querySelectorAll(".artist"), function (b) {
+      b.onclick = function () {
+        current = b.getAttribute("data-a");
+        window.scrollTo(0, 0);
+        render();
+      };
+    });
+  }
+
+  function meter(label, done, n, cls) {
+    var pct = n ? Math.round(done / n * 100) : 0;
+    return '<div class="meter"><span class="ml">' + label + "</span>" +
+      '<span class="bar"><i class="' + cls + '" style="width:' + pct + '%"></i></span>' +
+      '<span class="mv">' + done + "/" + n + "</span></div>";
+  }
+
+  function tile(n, label, cls) {
+    return '<div class="tile ' + cls + '"><b>' + n + "</b><span>" + label + "</span></div>";
+  }
+
+  function renderDetail() {
+    document.getElementById("overview").hidden = true;
+    var d = document.getElementById("detail");
+    d.hidden = false;
+
+    var songs = (DATA.byArtist[current] || []).filter(matches);
+    var all = DATA.byArtist[current] || [];
+    var done = all.filter(function (s) { return !s.dataGap; }).length;
+
+    document.getElementById("dname").textContent = current;
+    document.getElementById("dsub").textContent =
+      all.length + " songs · " + done + " with full data · " +
+      all.filter(function (s) { return !s.gaps.sp; }).length + " with an SP run" +
+      (filter ? " · showing only those missing " + LABEL[filter].toLowerCase() : "") +
+      (all.some(function (s) { return s.order !== null; })
+        ? "" : " · no order numbers set yet");
+
+    document.getElementById("songs").innerHTML = songs.length
+      ? songs.map(songCard).join("")
+      : '<div class="empty">Nothing here is missing that.</div>';
+  }
+
+  function songCard(s) {
+    var meta = [];
+    meta.push(s.gaps.len ? '<span class="miss">no length</span>' : esc(s.len));
+    meta.push(s.gaps.date ? '<span class="miss">no release date</span>'
+                          : esc(s.date));
+    if (!s.gaps.date && s.mmdd) meta.push(esc(s.mmdd));
+
+    var pills =
+      dpill("b", "E", s.easy) + dpill("s", "N", s.normal) + dpill("g", "H", s.hard) +
+      (s.sp === null
+        ? '<span class="pill empty">SP —</span>'
+        : '<span class="pill sp">SP <span class="v">' + s.sp + "</span>" +
+          (s.miss === null ? "" : ' · <span class="v">' + s.miss + "</span> miss") +
+          "</span>");
+
+    return '<div class="song ' + (s.any ? "holes" : "clear") + '">' +
+      '<div class="ord' + (s.order === null ? " none" : "") + '">' +
+        (s.order === null ? "?" : s.order) + "</div>" +
+      '<div class="body"><div class="ttl">' + esc(s.song) + "</div>" +
+      '<div class="meta">' + meta.join(" · ") + "</div>" +
+      '<div class="pills">' + pills + "</div></div></div>";
+  }
+
+  function dpill(cls, letter, n) {
+    return n === null
+      ? '<span class="pill empty">' + letter + " —</span>"
+      : '<span class="pill ' + cls + '">' + letter +
+        ' <span class="v">' + n + "</span></span>";
+  }
+
+  /* ---------- wiring ---------- */
+  document.getElementById("q").addEventListener("input", function (e) {
+    query = e.target.value.trim();
+    if (query && current) current = null;
+    render();
+  });
+  document.getElementById("back").onclick = function () {
+    current = null; window.scrollTo(0, 0); render();
+  };
+  document.getElementById("refresh").onclick = function () {
+    document.getElementById("stamp").textContent = "reading the sheet…";
+    load();
+  };
+  document.getElementById("gear").onclick = function () { openSetup(false); };
+
+  load();
+})();
+</script>
+</body>
+</html>
