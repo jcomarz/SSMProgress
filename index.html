@@ -628,6 +628,22 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
   }
   function editOf(s) { return EDITS[keyFor(s)] || null; }
 
+  var PERSIST = null;   /* null = unknown, true = granted, false = refused */
+
+  /* Chrome drops site storage under pressure. persist() asks it not to;
+     it is granted on engagement, so it is worth asking and worth reporting. */
+  function askPersist() {
+    try {
+      if (!navigator.storage || !navigator.storage.persist) return;
+      navigator.storage.persisted().then(function (already) {
+        if (already) { PERSIST = true; return; }
+        navigator.storage.persist().then(function (ok) {
+          PERSIST = !!ok;
+        }, function () { PERSIST = false; });
+      }, function () {});
+    } catch (e) {}
+  }
+
   function loadLocal() {
     try { EDITS = JSON.parse(localStorage.getItem(LS_EDITS) || "{}"); }
     catch (e) { EDITS = {}; }
@@ -745,6 +761,45 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
     }).join("\n");
   }
 
+  /* Reads back a file written by Save a backup — the same five columns the
+     sheet gets, so one file serves both jobs. Comma or tab, either way. */
+  function importRows(text) {
+    var body = text.indexOf("\t") > -1 && text.indexOf(",") === -1
+      ? text.replace(/\t/g, ",") : text;
+    var rows = parseCSV(body).filter(function (r) {
+      return r.some(function (c) { return String(c).trim() !== ""; });
+    });
+    if (!rows.length) return 0;
+    if (norm_(rows[0][0]) === "artist" && norm_(rows[0][1]) === "song") rows.shift();
+
+    var added = 0, chain = Promise.resolve();
+    rows.forEach(function (r) {
+      var artist = String(r[0] || "").trim(), song = String(r[1] || "").trim();
+      if (!artist || !song) return;
+      var body2 = {
+        artist: artist, song: song,
+        len: String(r[2] || "").trim(),
+        date: String(r[3] || "").trim(),
+        done: /^(y|yes|true|1|x)$/i.test(String(r[4] || "").trim())
+      };
+      if (!body2.len && !body2.date && !body2.done) return;
+      var k = keyFor({ artist: artist, song: song });
+      EDITS[k] = body2; added++;
+      if (DBREF) {
+        chain = chain.then(function () {
+          return DBREF.doc(EDIT_COL + "/" + k).set(body2).catch(function () {});
+        });
+      }
+    });
+    if (!DBREF) {
+      try { localStorage.setItem(LS_EDITS, JSON.stringify(EDITS)); } catch (e) {}
+    }
+    badge();
+    return added;
+  }
+
+  function norm_(x) { return String(x == null ? "" : x).trim().toLowerCase(); }
+
   function renderTodo() {
     document.getElementById("overview").hidden = true;
     document.getElementById("detail").hidden = true;
@@ -773,20 +828,42 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
           "then <b>SSM Results → Apply the typed-in values</b>.</p>" +
           '<div class="row">' +
           '<button class="btn" id="copyBtn">Copy for pasting</button>' +
-          '<button class="btn ghost" id="csvBtn">Download .csv</button>' +
+          '<button class="btn ghost" id="csvBtn">Save a backup</button>' +
+          '<label class="btn ghost" for="impFile" style="cursor:pointer">Restore</label>' +
+          '<input id="impFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>' +
           '<span class="toast" id="toast"></span></div>' +
+          '<p style="margin-top:10px;font-size:.78rem">' + storageLine() + "</p>" +
           '<div style="margin-top:12px"><pre class="out" id="out">' +
             esc(asTSV()) + "</pre></div>" +
           '<div class="row"><button class="btn ghost" id="clearBtn">Clear the list</button>' +
           '<span class="toast" id="clearNote"></span></div>' +
           "</div>"
-        : '<div class="empty">Tick a song off, or type a length or release ' +
-          "date, and it shows up here.</div>");
+        : '<div class="note"><h3>Nothing yet</h3><p>Tick a song off, or type ' +
+          "a length or release date, and it shows up here.</p>" +
+          '<div class="row">' +
+          '<label class="btn ghost" for="impFile" style="cursor:pointer">Restore from a backup</label>' +
+          '<input id="impFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>' +
+          '<span class="toast" id="toast"></span></div></div>');
 
     document.getElementById("tback").onclick = function () {
       view = "list"; window.scrollTo(0, 0); render();
     };
-    if (!rows.length) return;
+    if (!rows.length) {
+      document.getElementById("impFile").onchange = function (ev) {
+        var f = ev.target.files && ev.target.files[0];
+        if (!f) return;
+        var fr = new FileReader();
+        fr.onload = function () {
+          var n = 0;
+          try { n = importRows(String(fr.result || "")); } catch (e) {}
+          toast(n ? "Restored " + n : "Nothing in that file");
+          render();
+        };
+        fr.readAsText(f);
+        ev.target.value = "";
+      };
+      return;
+    }
 
     document.getElementById("copyBtn").onclick = function () {
       var t = asTSV();
@@ -814,6 +891,22 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
         } catch (e) { toast("Couldn’t save — use Copy"); }
       }
     };
+    document.getElementById("impFile").onchange = function (ev) {
+      var f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        var n = 0;
+        try { n = importRows(String(fr.result || "")); }
+        catch (e) { toast("Couldn’t read that file"); return; }
+        toast(n ? "Restored " + n + " entr" + (n === 1 ? "y" : "ies") : "Nothing in that file");
+        render();
+      };
+      fr.onerror = function () { toast("Couldn’t read that file"); };
+      fr.readAsText(f);
+      ev.target.value = "";
+    };
+
     var armed = false;
     document.getElementById("clearBtn").onclick = function () {
       var btn = document.getElementById("clearBtn");
@@ -830,6 +923,23 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
       if (!DBREF) { try { localStorage.setItem(LS_EDITS, "{}"); } catch (e) {} }
       badge(); render();
     };
+  }
+
+  function storageLine() {
+    if (DBREF) {
+      return "Your entries are saved to your account, so they survive anything " +
+        "this browser does and show up on your computer too. Save a backup " +
+        "anyway before a long session if you like.";
+    }
+    var risk = PERSIST === true
+      ? "This browser has marked the page's storage persistent, so it should " +
+        "not be cleared on its own — but that is a promise browsers break " +
+        "under real pressure."
+      : "This browser can clear the page's storage whenever it likes, without " +
+        "warning.";
+    return risk + " <b>Save a backup</b> writes a real file to your phone, and " +
+      "<b>Restore</b> reads one back, so nothing here is only one eviction " +
+      "away from gone.";
   }
 
   function toast(m) {
@@ -1036,6 +1146,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
   };
 
   badge();
+  askPersist();
   initStore();
   load();
 })();
