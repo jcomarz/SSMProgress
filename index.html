@@ -1,18 +1,6 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<style>
-/* base the artifact host used to provide */
-:root { color-scheme: light;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px); }
-html, body { margin: 0; }
-img { max-width: 100%; }
-[hidden] { display: none !important; }
-</style>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>SSM Gap Check</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -247,8 +235,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
 }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 </style>
-</head>
-<body>
+
 <header>
   <div class="wrap">
     <div class="hrow">
@@ -457,6 +444,9 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
       s.gaps = {
         notes: s.easy === null || s.normal === null || s.hard === null,
         sp: s.sp === null,
+        /* an SP run logged with no miss count beside it — zero misses are
+           written as 0, so a blank here means the miss count never came in */
+        miss: s.sp !== null && s.miss === null,
         date: blank(s.date),
         len: blank(s.len),
         order: s.order === null
@@ -465,7 +455,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
          you have not posted a Super Perfect run on yet. Mixing them would
          bury the data gaps under a thousand unplayed charts. */
       s.dataGap = s.gaps.notes || s.gaps.date || s.gaps.len || s.gaps.order;
-      s.any = s.dataGap || s.gaps.sp;
+      s.any = s.dataGap || s.gaps.sp || s.gaps.miss;
       songs.push(s);
     }
     if (!songs.length) throw new Error("No song rows found in that feed.");
@@ -488,11 +478,11 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
   }
 
   /* ---------- load ---------- */
-  var KEYS = ["notes", "sp", "date", "len", "order"];
-  var LABEL = { notes: "Note counts", sp: "SP run", date: "Release date",
-                len: "Length", order: "Order" };
+  var KEYS = ["notes", "sp", "miss", "date", "len", "order"];
+  var LABEL = { notes: "Note counts", sp: "SP run", miss: "Miss counts",
+                date: "Release date", len: "Length", order: "Order" };
   /* spelled out for the chips, so "SP" keeps its capitals */
-  var PLURAL = { notes: "note counts", sp: "SP runs", date: "release dates",
+  var PLURAL = { notes: "note counts", sp: "SP runs", miss: "miss counts", date: "release dates",
                  len: "lengths", order: "order numbers" };
 
   function show(csv, when, fromCache) {
@@ -723,7 +713,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
   /* the chips count whatever you are looking at: the whole book on the
      artist list, just this artist once you are inside one */
   function drawFilters(scope) {
-    var totals = { notes: 0, sp: 0, date: 0, len: 0, order: 0 };
+    var totals = { notes: 0, sp: 0, miss: 0, date: 0, len: 0, order: 0 };
     scope.forEach(function (s) {
       KEYS.forEach(function (k) { if (s.gaps[k]) totals[k]++; });
     });
@@ -987,7 +977,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
       var songs = DATA.byArtist[a].filter(matches);
       if (!songs.length) return;
       shown++;
-      var done = 0, sp = 0, t = { notes: 0, sp: 0, date: 0, len: 0, order: 0 };
+      var done = 0, sp = 0, t = { notes: 0, sp: 0, miss: 0, date: 0, len: 0, order: 0 };
       DATA.byArtist[a].forEach(function (s) {
         if (!s.dataGap) done++;
         if (!s.gaps.sp) sp++;
@@ -1040,6 +1030,8 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
     document.getElementById("dsub").textContent =
       all.length + " songs · " + done + " with full data · " +
       all.filter(function (s) { return !s.gaps.sp; }).length + " with an SP run" +
+      (function () { var m = all.filter(function (s) { return s.gaps.miss; }).length;
+        return m ? " (" + m + " missing a miss count)" : ""; })() +
       (filter ? " · showing the " + songs.length + " with no " + PLURAL[filter] : "") +
       (all.some(function (s) { return s.order !== null; })
         ? "" : " · no order numbers set yet");
@@ -1066,7 +1058,8 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
         ? '<span class="pill hole">SP —</span>'
         : '<span class="pill sp">SP <span class="v">' + s.sp + "</span>" +
           (s.miss === null ? "" : ' · <span class="v">' + s.miss + "</span> miss") +
-          "</span>");
+          "</span>" +
+          (s.gaps.miss ? '<span class="pill hole">Miss —</span>' : ""));
 
     var fields = "";
     if (s.gaps.len) fields += fieldBox(i, "len", "Length", "1:23", e.len || "");
@@ -1151,5 +1144,5 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
   load();
 })();
 </script>
-</body>
-</html>
+
+</body></html>
