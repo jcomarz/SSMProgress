@@ -370,10 +370,12 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
   var HEAD = {
     artist: "artist", song: "song", length: "len", easy: "easy", normal: "normal",
     hardcount: "hard", date: "date", mmdd: "mmdd", order: "order",
-    myspcount: "sp", missednotes: "miss",
+    myspcount: "sp", missednotes: "miss", spdifficulty: "spdiff", spdiff: "spdiff",
     easymodenotecount: "easy", normalmodenotecount: "normal",
     hardmodenotecount: "hard", releasedatemmddyyyy: "date", releasedatemmdd: "mmdd"
   };
+  function isGold(d) { return /^(gold|hard)$/i.test(String(d || "").trim()); }
+  var HAS_DIFF = false;
   function hk(s) { return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, ""); }
 
   function blank(v) {
@@ -418,6 +420,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
       var k = HEAD[hk(head[i])];
       if (k && col[k] === undefined) col[k] = i;
     }
+    HAS_DIFF = col.spdiff !== undefined;
     if (col.artist === undefined || col.song === undefined) {
       throw new Error("No Artist and Song columns here. This looks like a " +
         "different tab — the feed needs to be the Export tab.");
@@ -437,13 +440,16 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
         hard: col.hard === undefined ? null : numOf(v[col.hard]),
         sp: col.sp === undefined ? null : numOf(v[col.sp]),
         miss: col.miss === undefined ? null : numOf(v[col.miss]),
+        spdiff: col.spdiff === undefined ? "" : String(v[col.spdiff] || "").trim(),
         date: col.date === undefined ? "" : tidyDate(v[col.date]),
         mmdd: col.mmdd === undefined ? "" : String(v[col.mmdd] || "").trim(),
         order: col.order === undefined ? null : numOf(v[col.order])
       };
       s.gaps = {
         notes: s.easy === null || s.normal === null || s.hard === null,
-        sp: s.sp === null,
+        /* once the sheet records which star the stored run came from, only a
+           Gold run counts as done; until then any SP run does */
+        sp: s.sp === null || (col.spdiff !== undefined && !isGold(s.spdiff)),
         /* an SP run logged with no miss count beside it — zero misses are
            written as 0, so a blank here means the miss count never came in */
         miss: s.sp !== null && s.miss === null,
@@ -484,6 +490,8 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
   /* spelled out for the chips, so "SP" keeps its capitals */
   var PLURAL = { notes: "note counts", sp: "SP runs", miss: "miss counts", date: "release dates",
                  len: "lengths", order: "order numbers" };
+
+  function plural(k) { return k === "sp" && HAS_DIFF ? "Gold SP runs" : PLURAL[k]; }
 
   function show(csv, when, fromCache) {
     DATA = build(csv); ERR = null;
@@ -723,7 +731,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
       KEYS.map(function (k) {
         return '<button class="chip" data-k="' + k + '"' +
           (totals[k] ? "" : " data-zero=\"1\"") + ' aria-pressed="' +
-          (filter === k) + '">No ' + PLURAL[k] + "<b>" + totals[k] + "</b></button>";
+          (filter === k) + '">No ' + plural(k) + "<b>" + totals[k] + "</b></button>";
       }).join("");
     Array.prototype.forEach.call(f.querySelectorAll(".chip"), function (b) {
       b.onclick = function () { filter = b.getAttribute("data-k") || null; render(); };
@@ -970,7 +978,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
       tile(all.length, "songs", "") +
       tile(clear, "data done", "done") +
       tile(totals.notes, "note gaps", "todo") +
-      tile(spDone, "SP logged", "sp");
+      tile(spDone, HAS_DIFF ? "Gold SP" : "SP logged", "sp");
 
     var list = document.getElementById("list"), html = "", shown = 0;
     DATA.artists.forEach(function (a) {
@@ -1029,10 +1037,10 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
     document.getElementById("dname").textContent = current;
     document.getElementById("dsub").textContent =
       all.length + " songs · " + done + " with full data · " +
-      all.filter(function (s) { return !s.gaps.sp; }).length + " with an SP run" +
+      all.filter(function (s) { return !s.gaps.sp; }).length + (HAS_DIFF ? " with a Gold SP run" : " with an SP run") +
       (function () { var m = all.filter(function (s) { return s.gaps.miss; }).length;
         return m ? " (" + m + " missing a miss count)" : ""; })() +
-      (filter ? " · showing the " + songs.length + " with no " + PLURAL[filter] : "") +
+      (filter ? " · showing the " + songs.length + " with no " + plural(filter) : "") +
       (all.some(function (s) { return s.order !== null; })
         ? "" : " · no order numbers set yet");
 
@@ -1040,7 +1048,7 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
     box.innerHTML = songs.length
       ? songs.map(function (s, i) { return songCard(s, i); }).join("")
       : '<div class="empty">Every ' + esc(current) + " song has " +
-        PLURAL[filter || "notes"] + ".</div>";
+        plural(filter || "notes") + ".</div>";
     wireSongs(box, songs);
   }
 
@@ -1056,8 +1064,9 @@ pre.out { background: var(--surface-2); border:1px solid var(--line);
       dpill("b", "E", s.easy) + dpill("s", "N", s.normal) + dpill("g", "H", s.hard) +
       (s.sp === null
         ? '<span class="pill hole">SP —</span>'
-        : '<span class="pill sp">SP <span class="v">' + s.sp + "</span>" +
+        : '<span class="pill ' + (s.gaps.sp ? "hole" : "sp") + '">SP <span class="v">' + s.sp + "</span>" +
           (s.miss === null ? "" : ' · <span class="v">' + s.miss + "</span> miss") +
+          (HAS_DIFF ? " · " + esc(s.spdiff || "star?") : "") +
           "</span>" +
           (s.gaps.miss ? '<span class="pill hole">Miss —</span>' : ""));
 
